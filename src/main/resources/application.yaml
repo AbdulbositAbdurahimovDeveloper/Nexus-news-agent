@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: news-agent
+  profiles:
+    # DB rejimi: h2 (default, file'da saqlaydi) | postgres
+    active: ${DB_MODE:h2}
+  threads:
+    virtual:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate   # sxemani faqat Liquibase boshqaradi
+    open-in-view: false
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+telegram:
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  # Whitelist: vergul bilan chat ID'lar. Bo'sh = faqat admin kira oladi.
+  allowed-chat-ids: ${TELEGRAM_ALLOWED_CHAT_IDS:}
+  # Bitta admin: statistika, API holati, "hozir yuborish" faqat unga ko'rinadi
+  admin-chat-id: ${TELEGRAM_ADMIN_CHAT_ID:}
+
+llm:
+  provider: ${LLM_PROVIDER:anthropic}
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-opus-4-8}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-2.0-flash}
+
+news:
+  timezone: ${TZ:Asia/Tashkent}
+  categories:
+    it:
+      feeds:
+        - https://hnrss.org/frontpage
+        - https://techcrunch.com/feed/
+        - https://www.theverge.com/rss/index.xml
+    world:
+      feeds:
+        - https://feeds.bbci.co.uk/news/world/rss.xml
+        - https://www.aljazeera.com/xml/rss/all.xml
+        - https://www.theguardian.com/world/rss
+    uz:
+      feeds:
+        - https://kun.uz/uz/rss
+        - https://daryo.uz/feed
+    economy:
+      feeds:
+        - https://feeds.bbci.co.uk/news/business/rss.xml
+        - https://www.theguardian.com/business/rss
+    science:
+      feeds:
+        - https://www.sciencedaily.com/rss/all.xml
+        - https://www.nature.com/nature.rss
+    sport:
+      feeds:
+        - https://feeds.bbci.co.uk/sport/rss.xml
+        - https://www.espn.com/espn/rss/news

@@ -1,0 +1,8 @@
+# H2 file rejimi (DEFAULT) — ma'lumot RAM'da emas, faylda saqlanadi.
+# Docker'da H2_PATH=/data/newsagent + ./data volume orqali persist bo'ladi.
+spring:
+  datasource:
+    url: jdbc:h2:file:${H2_PATH:./data/newsagent};MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""

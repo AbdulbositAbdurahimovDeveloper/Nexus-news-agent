@@ -1,0 +1,11 @@
+# PostgreSQL rejimi — DB_MODE=postgres bo'lganda faollashadi.
+# DB_HOST variantlari:
+#   db                     — compose'dagi bundled postgres (--profile postgres bilan)
+#   <konteyner-nomi>       — mavjud docker konteyner (docker network orqali)
+#   host.docker.internal   — kompyuterda o'rnatilgan postgres
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:news_agent}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}

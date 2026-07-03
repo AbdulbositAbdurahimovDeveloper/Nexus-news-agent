@@ -1,0 +1,12 @@
+# 2c rejim (Linux): kompyuterda o'rnatilgan, faqat 127.0.0.1 ni tinglaydigan
+# postgres'ga ulanish. network_mode: host — konteyner host tarmog'ida ishlaydi,
+# shuning uchun DB_HOST=localhost ishlaydi va port mapping kerak emas.
+#
+# Ishlatish:
+#   .env: DB_MODE=postgres, DB_HOST=localhost
+#   docker compose -f docker-compose.yml -f docker-compose.host-db.yml up -d
+services:
+  app:
+    network_mode: host
+    ports: !reset []
+    extra_hosts: !reset []

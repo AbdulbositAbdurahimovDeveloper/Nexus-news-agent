@@ -1,0 +1,14 @@
+# 2b rejim: boshqa docker konteynerdagi postgres'ga ulanish.
+# Ishlatish:
+#   .env: DB_MODE=postgres, DB_HOST=<postgres-konteyner-nomi>, EXTERNAL_NETWORK=<uning-tarmog'i>
+#   docker compose -f docker-compose.yml -f docker-compose.external-db.yml up -d --build
+services:
+  app:
+    networks:
+      - default
+      - external_db
+
+networks:
+  external_db:
+    external: true
+    name: ${EXTERNAL_NETWORK:?EXTERNAL_NETWORK .env faylda ko'rsatilishi kerak}

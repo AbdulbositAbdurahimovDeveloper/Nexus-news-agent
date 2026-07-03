@@ -1,0 +1,43 @@
+services:
+  app:
+    build: .
+    container_name: news-agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      H2_PATH: /data/newsagent   # H2 rejimida data volume ichiga yoziladi
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    extra_hosts:
+      # 2c rejim: kompyuterda o'rnatilgan postgres'ga ulanish uchun (Linux'da shart)
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # Bundled PostgreSQL — faqat `docker compose --profile postgres up` da ko'tariladi.
+  # .env: DB_MODE=postgres, DB_HOST=db
+  db:
+    image: postgres:17-alpine
+    container_name: news-agent-db
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-news_agent}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_NAME:-news_agent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pgdata:
