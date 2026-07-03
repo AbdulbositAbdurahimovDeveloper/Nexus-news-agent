@@ -11,9 +11,11 @@ pipeline {
     }
 
     environment {
-        // Asosiy compose + tashqi DB overlay (app-network'ga qo'shadi)
-        COMPOSE_FILES  = '-f docker-compose.yml -f docker-compose.external-db.yml'
-        PROJECT_NAME   = 'nexus-prod'
+        // Compose fayllar va project nomini env orqali beramiz (flag emas) —
+        // shunda `docker compose` ning barcha versiyalarida ishlaydi ('-p' flag muammosi bo'lmaydi).
+        // COMPOSE_FILE: asosiy + tashqi DB overlay (app-network'ga qo'shadi), Linux'da ':' bilan ajratiladi.
+        COMPOSE_FILE         = 'docker-compose.yml:docker-compose.external-db.yml'
+        COMPOSE_PROJECT_NAME = 'nexus-prod'
         APP_CONTAINER  = 'news-agent'
         EXTERNAL_NET   = 'app-network'
         // Prod .env — git'da yo'q. Jenkins'da "Secret file" credential sifatida saqlanadi.
@@ -56,14 +58,15 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh "docker compose -p ${PROJECT_NAME} ${COMPOSE_FILES} build --pull"
+                // COMPOSE_FILE / COMPOSE_PROJECT_NAME env'dan olinadi
+                sh "docker compose build --pull"
             }
         }
 
         stage('Deploy') {
             steps {
                 // Bundled `db` KO'TARILMAYDI (--profile postgres yo'q) — prod'da mavjud postgres ishlatiladi.
-                sh "docker compose -p ${PROJECT_NAME} ${COMPOSE_FILES} up -d --remove-orphans"
+                sh "docker compose up -d --remove-orphans"
             }
         }
 
