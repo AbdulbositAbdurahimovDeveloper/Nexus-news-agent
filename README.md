@@ -38,3 +38,8 @@ Default rejim — **H2 file** (hech qanday baza o'rnatish shart emas, data `./da
 ```
 
 To'liq texnik reja: [docs/task.md](docs/task.md)
+
+## Jenkins deploy
+
+Prod deploy pipeline Docker CLI va Compose v2 o'rnatilgan Jenkins agentni talab qiladi.
+Jenkins konteynerini tayyorlash: [docs/jenkins.md](docs/jenkins.md)

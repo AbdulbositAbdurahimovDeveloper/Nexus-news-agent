@@ -65,7 +65,7 @@ pipeline {
                     } else if (sh(script: 'docker-compose version', returnStatus: true) == 0) {
                         env.DC = 'docker-compose'
                     } else {
-                        error("Na 'docker compose' (v2), na 'docker-compose' (v1) topildi. Jenkins konteynerига compose o'rnating.")
+                        error("Na 'docker compose' (v2), na 'docker-compose' (v1) topildi. Jenkins konteyneriga Compose o'rnating: docs/jenkins.md")
                     }
                     echo "Compose komandasi: ${env.DC}"
                 }
