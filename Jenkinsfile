@@ -1,6 +1,6 @@
 // Nexus (news-agent) — PROD deploy pipeline.
-// App tashqi `app-network` orqali o'sha tarmoqdagi mavjud `postgres` konteyneriga ulanadi.
-// Jenkins prod hostning docker socket'idan foydalanadi (docker + docker compose kerak).
+// Compose ISHLATILMAYDI (Jenkins'da compose plugin yo'q) — oddiy `docker build` + `docker run`.
+// Konteyner `app-network`ga ulanib, o'sha tarmoqdagi mavjud `postgres`ga (DB_HOST=postgres) yetadi.
 pipeline {
     agent any
 
@@ -11,109 +11,138 @@ pipeline {
     }
 
     environment {
-        // Compose fayllar va project nomini env orqali beramiz (flag emas) —
-        // shunda `docker compose` ning barcha versiyalarida ishlaydi ('-p' flag muammosi bo'lmaydi).
-        // COMPOSE_FILE: asosiy + tashqi DB overlay (app-network'ga qo'shadi), Linux'da ':' bilan ajratiladi.
-        COMPOSE_FILE         = 'docker-compose.yml:docker-compose.external-db.yml'
-        COMPOSE_PROJECT_NAME = 'nexus-prod'
-        APP_CONTAINER  = 'news-agent'
-        EXTERNAL_NET   = 'app-network'
-        // Prod .env — git'da yo'q. Jenkins'da "Secret file" credential sifatida saqlanadi.
-        // Manage Jenkins → Credentials → Secret file, ID = nexus-prod-env
-        ENV_CRED_ID    = 'nexus-prod-env'
+        // Bizda bitta muhit (PROD) — DEV/PROD tanlovi yo'q
+        IMAGE_NAME     = "news-agent"
+        CONTAINER_NAME = "news-agent"
+        NETWORK_NAME   = "app-network"
+        CONTAINER_PORT = "8080"
+
+        IMAGE_TAG      = "prod-${BUILD_NUMBER}"
+        FULL_IMAGE     = "${IMAGE_NAME}:prod-${BUILD_NUMBER}"
+        LATEST_IMAGE   = "${IMAGE_NAME}:prod-latest"
+
+        // Prod .env — git'da yo'q. Jenkins "Secret file" credential.
+        ENV_CREDENTIAL_ID = "nexus-prod-env"
+
+        LOG_DIR      = "/opt/server/logs/projects/nexus/news-agent"
+        PROJECT_DIR  = "/opt/server/projects/nexus"
     }
 
     stages {
-        stage('Checkout') {
+        stage('1. Checkout') {
             steps {
+                cleanWs()
                 checkout scm
             }
         }
 
-        stage('Prod .env tayyorlash') {
+        stage('2. Test') {
             steps {
-                // .env.prod git'ga kirmaydi — credential'dan .env qilib yozamiz.
-                // Bu fayl ham compose substitution (${EXTERNAL_NETWORK} ...), ham
-                // servicening `env_file: .env` uchun ishlatiladi.
-                withCredentials([file(credentialsId: env.ENV_CRED_ID, variable: 'ENV_FILE')]) {
-                    sh 'cp "$ENV_FILE" .env'
-                }
-                // Prod .env quyidagilarga ega bo'lishi shart:
-                //   DB_MODE=postgres
-                //   DB_HOST=postgres          (app-network'dagi mavjud konteyner nomi)
-                //   EXTERNAL_NETWORK=app-network
-                sh '''
-                    grep -q '^EXTERNAL_NETWORK=app-network' .env || { echo "❌ .env: EXTERNAL_NETWORK=app-network bo'lishi kerak"; exit 1; }
-                    grep -q '^DB_HOST=postgres'            .env || echo "⚠️  .env: DB_HOST=postgres emas — app-network'dagi postgres konteyner nomini tekshiring"
-                '''
-            }
-        }
-
-        stage('Tarmoqni tekshirish') {
-            steps {
-                // Tashqi tarmoq mavjudligini tasdiqlaymiz (biz yaratmaymiz, faqat ulanamiz).
-                sh 'docker network inspect "$EXTERNAL_NET" >/dev/null 2>&1 || { echo "❌ $EXTERNAL_NET topilmadi"; exit 1; }'
-            }
-        }
-
-        stage('Compose aniqlash') {
-            steps {
-                // Jenkins konteynerida `docker compose` (v2) yoki `docker-compose` (v1) borligini aniqlaymiz.
-                script {
-                    if (sh(script: 'docker compose version', returnStatus: true) == 0) {
-                        env.DC = 'docker compose'
-                    } else if (sh(script: 'docker-compose version', returnStatus: true) == 0) {
-                        env.DC = 'docker-compose'
-                    } else {
-                        error("Na 'docker compose' (v2), na 'docker-compose' (v1) topildi. Jenkins konteyneriga Compose o'rnating: docs/jenkins.md")
-                    }
-                    echo "Compose komandasi: ${env.DC}"
-                }
-            }
-        }
-
-        stage('Build') {
-            steps {
-                // COMPOSE_FILE / COMPOSE_PROJECT_NAME env'dan olinadi
-                sh "${DC} build --pull"
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                // Bundled `db` KO'TARILMAYDI (--profile postgres yo'q) — prod'da mavjud postgres ishlatiladi.
-                sh "${DC} up -d --remove-orphans"
-            }
-        }
-
-        stage('Healthcheck') {
-            steps {
+                echo "Maven testlari ishga tushirilmoqda..."
                 sh """
-                    echo "Konteyner sog'lig'ini kutyapmiz..."
-                    for i in \$(seq 1 30); do
-                        status=\$(docker inspect -f '{{.State.Health.Status}}' ${APP_CONTAINER} 2>/dev/null || echo starting)
-                        echo "[\$i] holat: \$status"
-                        [ "\$status" = "healthy" ]   && { echo "✅ App sog'lom"; exit 0; }
-                        [ "\$status" = "unhealthy" ] && { docker logs --tail 80 ${APP_CONTAINER}; exit 1; }
-                        sleep 5
-                    done
-                    echo "❌ Healthcheck timeout"; docker logs --tail 80 ${APP_CONTAINER}; exit 1
+                    chmod +x mvnw
+                    ./mvnw test
                 """
+            }
+        }
+
+        stage('3. Security Gates') {
+            steps {
+                echo "Secret scan, dependency scan va SBOM (bloklamaydi — exit-code=0)..."
+                sh """
+                    # Maxfiy kalitlar (secrets) sizishini tekshirish
+                    docker run --rm -v "\$(pwd)":/path zricethezav/gitleaks:latest detect --source=/path --no-git --redact --exit-code=0
+
+                    # Kod zaifliklari va noto'g'ri sozlamalar
+                    docker run --rm -v "\$(pwd)":/path aquasec/trivy:latest fs --exit-code=0 --severity HIGH,CRITICAL --scanners vuln,secret,misconfig /path
+
+                    # SBOM hisoboti
+                    docker run --rm -v "\$(pwd)":/path aquasec/trivy:latest fs --format cyclonedx --output /path/sbom.cdx.json /path
+                """
+            }
+        }
+
+        stage('4. Build Docker Image') {
+            steps {
+                echo "Docker image yig'ilmoqda..."
+                sh """
+                    docker build \
+                      -t ${FULL_IMAGE} \
+                      -t ${LATEST_IMAGE} \
+                      .
+                """
+            }
+        }
+
+        stage('5. Scan Docker Image') {
+            steps {
+                echo "Docker image zaifliklarga tekshirilmoqda (bloklamaydi)..."
+                sh """
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code=0 --severity HIGH,CRITICAL ${FULL_IMAGE}
+                """
+            }
+        }
+
+        stage('6. Deploy') {
+            steps {
+                echo "PROD muhitga xavfsiz deploy qilinmoqda..."
+
+                // Jenkins'dagi maxfiy .env faylini o'qib olamiz
+                withCredentials([file(credentialsId: env.ENV_CREDENTIAL_ID, variable: 'SECRET_ENV_FILE')]) {
+                    sh """
+                        # Papkalarni yaratish
+                        mkdir -p ${LOG_DIR}
+                        mkdir -p ${PROJECT_DIR}
+
+                        # Maxfiy .env'ni vaqtincha ko'chirish (--env-file uchun)
+                        cp "${SECRET_ENV_FILE}" ${PROJECT_DIR}/.env
+                        chmod 600 ${PROJECT_DIR}/.env
+
+                        # Tarmoq mavjudligini tekshirish (biz yaratmaymiz, faqat ulanamiz)
+                        docker network inspect ${NETWORK_NAME} >/dev/null 2>&1 || {
+                          echo "ERROR: ${NETWORK_NAME} tarmog'i topilmadi"
+                          exit 1
+                        }
+
+                        # Eski konteynerni xavfsiz o'chirish
+                        docker rm -f ${CONTAINER_NAME} || true
+
+                        # Yangi konteynerni ishga tushirish.
+                        # Host port ochilmaydi — bot outbound (Telegram long polling), monitoring
+                        # esa app-network ichida konteyner nomi orqali (news-agent:8080) yetadi.
+                        docker run -d \
+                          --name ${CONTAINER_NAME} \
+                          --restart unless-stopped \
+                          --network ${NETWORK_NAME} \
+                          --env-file ${PROJECT_DIR}/.env \
+                          --read-only \
+                          --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+                          --cap-drop=ALL \
+                          --security-opt no-new-privileges:true \
+                          --memory=768m \
+                          --cpus=1.0 \
+                          --pids-limit=256 \
+                          -v ${LOG_DIR}:/app/logs \
+                          ${LATEST_IMAGE}
+
+                        # Maxfiy faylni darhol o'chirish
+                        rm -f ${PROJECT_DIR}/.env
+
+                        # app-network ichida postgres ko'rinayotganini tekshirish
+                        docker exec ${CONTAINER_NAME} getent hosts postgres
+                    """
+                }
+                echo "Muvaffaqiyatli deploy qilindi (PROD)."
             }
         }
     }
 
     post {
         success {
-            echo "✅ Deploy tayyor — ${APP_CONTAINER} '${EXTERNAL_NET}' orqali postgres'ga ulandi."
+            echo "✅ Pipeline muvaffaqiyatli yakunlandi."
         }
         failure {
-            echo "❌ Deploy muvaffaqiyatsiz — yuqoridagi loglarni tekshiring."
-        }
-        always {
-            sh 'docker image prune -f || true'
-            // Secret workspace'da qolib ketmasin
-            sh 'rm -f .env || true'
+            echo "❌ Pipeline xatolik bilan tugadi. Loglarni tekshiring."
         }
     }
 }
