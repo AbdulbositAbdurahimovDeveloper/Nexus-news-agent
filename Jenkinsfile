@@ -21,6 +21,9 @@ pipeline {
         FULL_IMAGE     = "${IMAGE_NAME}:prod-${BUILD_NUMBER}"
         LATEST_IMAGE   = "${IMAGE_NAME}:prod-latest"
 
+        // Tezlik uchun: BuildKit (Dockerfile .m2 cache mount ishlashi uchun kerak)
+        DOCKER_BUILDKIT = "1"
+
         // Prod .env — git'da yo'q. Jenkins "Secret file" credential.
         ENV_CREDENTIAL_ID = "nexus-prod-env"
 
@@ -36,44 +39,54 @@ pipeline {
             }
         }
 
-        stage('2. Security Gates') {
-            steps {
-                echo "Secret scan, dependency scan va SBOM (bloklamaydi — exit-code=0)..."
-                sh """
-                    # Maxfiy kalitlar (secrets) sizishini tekshirish
-                    docker run --rm -v "\$(pwd)":/path zricethezav/gitleaks:latest detect --source=/path --no-git --redact --exit-code=0
+        // Build (sekin, Maven) va Security Gates (skanerlar) bir vaqtda ishlaydi —
+        // skanerlash Maven build vaqti ostida "yashirinadi".
+        stage('2. Build & Security') {
+            parallel {
+                stage('Build Docker Image') {
+                    steps {
+                        echo "Docker image yig'ilmoqda (testlar shu bosqichда, JDK 25 ichida)..."
+                        sh """
+                            docker build \
+                              -t ${FULL_IMAGE} \
+                              -t ${LATEST_IMAGE} \
+                              .
+                        """
+                    }
+                }
 
-                    # Kod zaifliklari va noto'g'ri sozlamalar
-                    docker run --rm -v "\$(pwd)":/path aquasec/trivy:latest fs --exit-code=0 --severity HIGH,CRITICAL --scanners vuln,secret,misconfig /path
+                stage('Security Gates') {
+                    steps {
+                        echo "Secret/dependency scan va SBOM (bloklamaydi — exit-code=0)..."
+                        // Trivy DB'si 'trivy-cache' volume'da saqlanadi — har safar qayta yuklanmaydi.
+                        sh """
+                            docker run --rm -v "\$(pwd)":/path \
+                              zricethezav/gitleaks:latest detect --source=/path --no-git --redact --exit-code=0
 
-                    # SBOM hisoboti
-                    docker run --rm -v "\$(pwd)":/path aquasec/trivy:latest fs --format cyclonedx --output /path/sbom.cdx.json /path
-                """
+                            docker run --rm -v trivy-cache:/root/.cache/trivy -v "\$(pwd)":/path \
+                              aquasec/trivy:latest fs --exit-code=0 --severity HIGH,CRITICAL --scanners vuln,secret,misconfig /path
+
+                            docker run --rm -v trivy-cache:/root/.cache/trivy -v "\$(pwd)":/path \
+                              aquasec/trivy:latest fs --format cyclonedx --output /path/sbom.cdx.json /path
+                        """
+                    }
+                }
             }
         }
 
-        stage('3. Build Docker Image') {
-            steps {
-                echo "Docker image yig'ilmoqda (testlar shu bosqichда, JDK 25 ichida ishlaydi)..."
-                sh """
-                    docker build \
-                      -t ${FULL_IMAGE} \
-                      -t ${LATEST_IMAGE} \
-                      .
-                """
-            }
-        }
-
-        stage('4. Scan Docker Image') {
+        stage('3. Scan Docker Image') {
             steps {
                 echo "Docker image zaifliklarga tekshirilmoqda (bloklamaydi)..."
                 sh """
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code=0 --severity HIGH,CRITICAL ${FULL_IMAGE}
+                    docker run --rm \
+                      -v trivy-cache:/root/.cache/trivy \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      aquasec/trivy:latest image --exit-code=0 --severity HIGH,CRITICAL ${FULL_IMAGE}
                 """
             }
         }
 
-        stage('5. Deploy') {
+        stage('4. Deploy') {
             steps {
                 echo "PROD muhitga xavfsiz deploy qilinmoqda..."
 

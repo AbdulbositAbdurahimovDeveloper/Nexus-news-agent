@@ -1,15 +1,16 @@
+# syntax=docker/dockerfile:1
 # 1-bosqich: Loyihani yig'ish (Build stage) — JDK 25 + Maven wrapper
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 
-# Avval bog'liqliklarni cache'laymiz
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw -q dependency:go-offline
-
-# So'ng kodni yig'amiz — testlar ham shu yerda (JDK 25) ishlaydi
 COPY src ./src
-RUN ./mvnw -q clean package
+
+# .m2 BuildKit cache mount — bog'liqliklar build'lar orasida saqlanadi (qayta yuklanmaydi).
+# Testlar ham shu yerda (JDK 25) ishlaydi.
+RUN --mount=type=cache,target=/root/.m2 \
+    chmod +x mvnw && ./mvnw -q clean package
 
 # 2-bosqich: Ishga tushirish (Runtime stage) — JRE 25
 FROM eclipse-temurin:25-jre
