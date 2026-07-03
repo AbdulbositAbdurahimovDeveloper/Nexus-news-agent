@@ -7,9 +7,9 @@ COPY .mvn .mvn
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -q dependency:go-offline
 
-# So'ng kodni yig'amiz (testlar Jenkins'ning alohida "Test" bosqichida ishlaydi)
+# So'ng kodni yig'amiz — testlar ham shu yerda (JDK 25) ishlaydi
 COPY src ./src
-RUN ./mvnw -q clean package -DskipTests
+RUN ./mvnw -q clean package
 
 # 2-bosqich: Ishga tushirish (Runtime stage) — JRE 25
 FROM eclipse-temurin:25-jre

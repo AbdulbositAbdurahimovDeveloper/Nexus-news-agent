@@ -36,17 +36,7 @@ pipeline {
             }
         }
 
-        stage('2. Test') {
-            steps {
-                echo "Maven testlari ishga tushirilmoqda..."
-                sh """
-                    chmod +x mvnw
-                    ./mvnw test
-                """
-            }
-        }
-
-        stage('3. Security Gates') {
+        stage('2. Security Gates') {
             steps {
                 echo "Secret scan, dependency scan va SBOM (bloklamaydi — exit-code=0)..."
                 sh """
@@ -62,9 +52,9 @@ pipeline {
             }
         }
 
-        stage('4. Build Docker Image') {
+        stage('3. Build Docker Image') {
             steps {
-                echo "Docker image yig'ilmoqda..."
+                echo "Docker image yig'ilmoqda (testlar shu bosqichда, JDK 25 ichida ishlaydi)..."
                 sh """
                     docker build \
                       -t ${FULL_IMAGE} \
@@ -74,7 +64,7 @@ pipeline {
             }
         }
 
-        stage('5. Scan Docker Image') {
+        stage('4. Scan Docker Image') {
             steps {
                 echo "Docker image zaifliklarga tekshirilmoqda (bloklamaydi)..."
                 sh """
@@ -83,7 +73,7 @@ pipeline {
             }
         }
 
-        stage('6. Deploy') {
+        stage('5. Deploy') {
             steps {
                 echo "PROD muhitga xavfsiz deploy qilinmoqda..."
 
