@@ -56,17 +56,33 @@ pipeline {
             }
         }
 
+        stage('Compose aniqlash') {
+            steps {
+                // Jenkins konteynerida `docker compose` (v2) yoki `docker-compose` (v1) borligini aniqlaymiz.
+                script {
+                    if (sh(script: 'docker compose version', returnStatus: true) == 0) {
+                        env.DC = 'docker compose'
+                    } else if (sh(script: 'docker-compose version', returnStatus: true) == 0) {
+                        env.DC = 'docker-compose'
+                    } else {
+                        error("Na 'docker compose' (v2), na 'docker-compose' (v1) topildi. Jenkins konteynerига compose o'rnating.")
+                    }
+                    echo "Compose komandasi: ${env.DC}"
+                }
+            }
+        }
+
         stage('Build') {
             steps {
                 // COMPOSE_FILE / COMPOSE_PROJECT_NAME env'dan olinadi
-                sh "docker compose build --pull"
+                sh "${DC} build --pull"
             }
         }
 
         stage('Deploy') {
             steps {
                 // Bundled `db` KO'TARILMAYDI (--profile postgres yo'q) — prod'da mavjud postgres ishlatiladi.
-                sh "docker compose up -d --remove-orphans"
+                sh "${DC} up -d --remove-orphans"
             }
         }
 
